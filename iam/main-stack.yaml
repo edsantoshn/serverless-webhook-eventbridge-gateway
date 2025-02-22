@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: main stack IAM.
+
+Parameters:
+  IAMPoliciesStackURLParameter:
+    Type: "String"
+    Description: "IAM Stack Parameter"
+    Default: ""
+  IAMRolesStackURLParameter:
+    Type: "String"
+    Description: "IAM Stack Parameter"
+
+
+
+Resources:
+  Policies:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref IAMPoliciesStackURLParameter
+  Role:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref IAMRolesStackURLParameter
+    DependsOn: Policies

@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  ProcessorName:
+    Type: String
+    Description: Lambda Processor name
+    Default: sqs-message-processor
+
+Resources:
+  Processor:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref ProcessorName
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              print(f"Received event ===>: {event}")
+              return {
+                  "statusCode": 200,
+                  "body": json.dumps("Hello from Lambda!")
+              }
+      MemorySize: 128
+      Timeout: 60
+      Runtime: python3.13
+      Role: !ImportValue SQSProcessorRoleARN
+
+  ProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProcessorName}
+      RetentionInDays: 7
+
+  
+  LambdaSQSEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !ImportValue WebhookAPIGateWayQueueARN
+      FunctionName: !Ref Processor
+      FunctionResponseTypes:
+        - ReportBatchItemFailures
+      ScalingConfig:
+        MaximumConcurrency: 2

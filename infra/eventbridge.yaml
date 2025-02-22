@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Stack for EventBridge resources
+
+Resources:
+  WebhookAPG:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: webhook-api-gate-way-event-bus
+
+  EventBridgeRoleForSQS:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EventBridgeToSQSPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !ImportValue WebhookAPIGateWayQueueARN
+
+  EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: webhook-api-gate-way-eb-rule
+      EventBusName: !Ref WebhookAPG
+      EventPattern: '{"source":[{"prefix":"webhook-api-gate-way"}]}'
+      State: ENABLED
+      Targets:
+        - Id: SendToSQS
+          Arn: !ImportValue WebhookAPIGateWayQueueARN
+          RoleArn: !GetAtt EventBridgeRoleForSQS.Arn
+
+  EventBridgeRuleQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !ImportValue WebhookAPIGateWayQueueURL
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !ImportValue WebhookAPIGateWayQueueARN
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt EventBridgeRule.Arn
+
+
+Outputs:
+  WebhookAPGArn:
+    Description: The ARN of the event bus for Api Gateway
+    Value: !GetAtt WebhookAPG.Arn
+    Export:
+      Name: WebhookAPGArn
+  WebhookAPGName:
+    Description: The name of the event bus for Api Gateway
+    Value: !Ref WebhookAPG
+    Export:
+      Name: WebhookAPGName

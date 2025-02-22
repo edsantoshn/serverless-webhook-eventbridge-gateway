@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  StageName:
+    Type: String
+    Default: ''
+
+Resources:
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: WebhookApiGatewayAPI
+      Description: API for handling webhook events
+      ApiKeySourceType: HEADER
+      EndpointConfiguration:
+        Types:
+          - EDGE
+      Body:
+        openapi: 3.0.1
+        info:
+          title: Webhook API GateWay Test Events API
+          description: API for handling Webhook API GateWay Test events
+          version: 1.0.0
+        components:
+          securitySchemes:
+            api_key:
+              type: apiKey
+              name: x-api-key
+              in: header
+        security:
+          - api_key: []
+        paths:
+          /events:
+            post:
+              x-amazon-apigateway-auth:
+                type: NONE
+              x-amazon-apigateway-integration:
+                type: AWS
+                httpMethod: POST
+                uri: !Sub arn:aws:apigateway:${AWS::Region}:events:action/PutEvents
+                credentials: !GetAtt ApiGatewayRole.Arn
+                responses:
+                  default:
+                    statusCode: '200'
+                requestTemplates:
+                  application/json: !Sub
+                    - |-
+                      #set($context.requestOverride.header.X-Amz-Target = "AWSEvents.PutEvents")
+                      #set($context.requestOverride.header.Content-Type = "application/x-amz-json-1.1")
+                      #set($inputRoot = $input.path('$'))
+                      {
+                      "Entries": [
+                        #foreach($element in $inputRoot.data)
+                        {
+                          "Detail": "$util.escapeJavaScript($element.item).replaceAll("\\'","'")",
+                          "DetailType": "webhook-api-gate-way",
+                          "EventBusName": "${EventBusName}",
+                          "Source": "webhook-api-gate-way"
+                        }#if($foreach.hasNext),#end
+                        #end
+                      ]
+                      }
+                    - EventBusName: !ImportValue  WebhookAPGName
+                passthroughBehavior: when_no_templates
+              responses:
+                '200':
+                  description: Success
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                '400':
+                  description: Bad Request
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - RestApi
+    Properties:
+      RestApiId: !Ref RestApi
+      Description: Production deployment for Webhook API GateWay Test Events API
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref ApiDeployment
+      RestApiId: !Ref RestApi
+      StageName: !Ref StageName
+
+  ApiGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      Policies:
+        - PolicyName: EventBridgePutEvents
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !ImportValue WebhookAPGArn
+
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn:
+      - ApiStage
+    Properties:
+      Name: ApiKey
+      Description: API Key for Webhook API GateWay Test Events API
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref RestApi
+          StageName: !Ref StageName
+
+  UsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn:
+      - ApiStage
+    Properties:
+      ApiStages:
+        - ApiId: !Ref RestApi
+          Stage: !Ref StageName
+      Description: Usage plan for Webhook API GateWay Test Events API
+      UsagePlanName: UsagePlan
+
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref UsagePlan
+
+Outputs:
+  ApiKeyValue:
+    Description: API Key Value
+    Value: !Ref ApiKey
+  RestApiId:
+    Description: REST API ID
+    Value: !Ref RestApi
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}

@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: main stack Infrastructure.
+
+Parameters:
+  infraSQSStackURLParameter:
+    Type: "String"
+    Description: "SQS Stack Parameter"
+    Default: ""
+  infraEventBridgeStackURLParameter:
+    Type: "String"
+    Description: "EventBridge Stack Parameter"
+    Default: ""
+  infraApiGatewayStackURLParameter:
+    Type: "String"
+    Description: "ApiGateway Stack Parameter"
+    Default: ""
+  StageName:
+    Type: String
+    Default: ''
+
+
+Resources:
+  infraSQSStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref infraSQSStackURLParameter
+
+  infraEventBridgeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref infraEventBridgeStackURLParameter
+    DependsOn: infraSQSStack
+
+  infraApiGatewayStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref infraApiGatewayStackURLParameter
+      Parameters:
+        StageName: !Ref StageName
+    DependsOn: infraEventBridgeStack

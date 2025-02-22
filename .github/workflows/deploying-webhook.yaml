@@ -1,0 +1,141 @@
+name: Webhook with API Gateway and EventBridge
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  STAGE: ${{ github.ref_name  == 'develop' && 'dev' || github.ref_name  }}
+
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  IAM-webhook-apt-eb-Stack:
+    runs-on: ubuntu-latest
+    env:
+      IAM_STACK_NAME: webhook-apt-eb-iam-stack
+    environment:
+      name: ${{ github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Set IAC_BUCKET environment variable
+        run: |
+          IAC_BUCKET=$(aws ssm get-parameter --name "webhook-apt-eb-bucket-parameter-$STAGE" --query "Parameter.Value" --output text)
+          echo "IAC_BUCKET=$IAC_BUCKET" >> $GITHUB_ENV
+
+      - name: Uploading IAM Stack Templates
+        run: |
+          echo "Uploading Policies Stack Template"
+          aws s3 cp "iam/policies.yaml" "s3://$IAC_BUCKET/templates/webhook-apt-eb/iam/"
+          echo "Uploading Roles Stack Template"
+          aws s3 cp "iam/roles.yaml" "s3://$IAC_BUCKET/templates/webhook-apt-eb/iam/"
+
+      - name: Deploying the IAM Stack
+        env:
+          PoliciesStackUrlParameter: https://${{ env.IAC_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/templates/webhook-apt-eb/iam/policies.yaml
+          RolesStackUrlParameter: https://${{ env.IAC_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/templates/webhook-apt-eb/iam/roles.yaml
+        run: |
+          aws cloudformation deploy \
+            --template-file iam/main-stack.yaml \
+            --stack-name ${{ env.IAM_STACK_NAME }} \
+            --parameter-overrides env=${{env.STAGE}} \
+              IAMPoliciesStackURLParameter=$PoliciesStackUrlParameter \
+              IAMRolesStackURLParameter=$RolesStackUrlParameter \
+            --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
+
+  Infra-webhook-apt-eb-Stack:
+    needs: IAM-webhook-apt-eb-Stack
+    if: always() && needs.IAM-webhook-apt-eb-Stack.result != 'failure'
+    runs-on: ubuntu-latest
+    env:
+      INFRA_STACK_NAME: webhook-apt-eb-infra-stack
+    environment:
+      name: ${{ github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set IAC_BUCKET environment variable
+        run: |
+          IAC_BUCKET=$(aws ssm get-parameter --name "webhook-apt-eb-bucket-parameter-$STAGE" --query "Parameter.Value" --output text)
+          echo "IAC_BUCKET=$IAC_BUCKET" >> $GITHUB_ENV
+
+      - name: Uploading Infra Stack Template
+        run: |
+          echo "Uploading Infra Stack Template"
+          aws s3 cp "infra/apigateway.yaml" "s3://$IAC_BUCKET/templates/webhook-apt-eb/infra/"
+          aws s3 cp "infra/eventbridge.yaml" "s3://$IAC_BUCKET/templates/webhook-apt-eb/infra/"
+          aws s3 cp "infra/sqs.yaml" "s3://$IAC_BUCKET/templates/webhook-apt-eb/infra/"
+
+      - name: Deploying the Infra Stack
+        env:
+          apigatewayStackUrlParameter: https://${{ env.IAC_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/templates/webhook-apt-eb/infra/apigateway.yaml
+          eventbridgeStackUrlParameter: https://${{ env.IAC_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/templates/webhook-apt-eb/infra/eventbridge.yaml
+          sqsStackUrlParameter: https://${{ env.IAC_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/templates/webhook-apt-eb/infra/sqs.yaml
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/main-stack.yaml \
+            --stack-name ${{ env.INFRA_STACK_NAME }} \
+            --parameter-overrides StageName=${{env.STAGE}} \
+              infraSQSStackURLParameter=$sqsStackUrlParameter \
+              infraEventBridgeStackURLParameter=$eventbridgeStackUrlParameter \
+              infraApiGatewayStackURLParameter=$apigatewayStackUrlParameter \
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
+
+  Lambdas-webhook-apt-eb-Stack:
+    needs: Infra-webhook-apt-eb-Stack
+    if: always() && needs.Infra-webhook-apt-eb-Stack.result != 'failure'
+    runs-on: ubuntu-latest
+    env:
+      LAMBDAS_STACK_NAME: webhook-apt-eb-lambdas-stack
+    environment:
+      name: ${{ github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set IAC_BUCKET environment variable
+        run: |
+          IAC_BUCKET=$(aws ssm get-parameter --name "webhook-apt-eb-bucket-parameter-$STAGE" --query "Parameter.Value" --output text)
+          echo "IAC_BUCKET=$IAC_BUCKET" >> $GITHUB_ENV
+
+      - name: Uploading Lambda Stack Templates
+        run: |
+          echo "Uploading Lambda Stack Templates"
+          aws s3 cp "functions/processor.yaml" "s3://$IAC_BUCKET/templates/webhook-apt-eb/lambdas/"
+
+      - name: Deploying the Functions Stack
+        env:
+          SQSProcessorStackURLParameter: https://${{ env.IAC_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/templates/webhook-apt-eb/lambdas/processor.yaml
+
+        run: |
+          echo "Deploying the Functions Stack"
+          aws cloudformation deploy \
+            --template-file functions/main-stack.yaml \
+            --stack-name ${{ env.LAMBDAS_STACK_NAME }} \
+            --parameter-overrides \
+              SQSProcessorStackURLParameter=$SQSProcessorStackURLParameter\
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND

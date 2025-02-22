@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Stack for SQS Queues
+
+Resources:
+  WebhookAPIGateWayDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: Webhook-API-Gate-Way-DLQ
+      VisibilityTimeout: 60
+
+  WebhookAPIGateWayQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: Webhook-API-Gate-Way-Queue
+      VisibilityTimeout: 60
+      DelaySeconds: 0
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 0
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WebhookAPIGateWayDLQ.Arn
+        maxReceiveCount: 3
+
+Outputs:
+  QueueURL:
+    Description: URL of the queue
+    Value: !Ref WebhookAPIGateWayQueue
+    Export:
+      Name: WebhookAPIGateWayQueueURL
+  QueueARN:
+    Description: ARN of the queue
+    Value: !GetAtt WebhookAPIGateWayQueue.Arn
+    Export:
+      Name: WebhookAPIGateWayQueueARN
+  DLQueueURL:
+    Description: URL of the Dead Letter queue
+    Value: !Ref WebhookAPIGateWayDLQ
+    Export:
+      Name: WebhookAPIGateWayDLQQueueURL
+  DLQueueARN:
+    Description: ARN of the Dead Letter queue
+    Value: !GetAtt WebhookAPIGateWayDLQ.Arn
+    Export:
+      Name: WebhookAPIGateWayDLQQueueARN

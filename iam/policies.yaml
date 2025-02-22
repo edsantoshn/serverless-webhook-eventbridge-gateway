@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  WebHookLogsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: WebHookLogsPolicy
+      Path: /
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: "*"
+
+  SQSProcessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: SQSProcessPolicy
+      Description: SQS Receive message
+      Path: /
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:ChangeMessageVisibility
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:Webhook-API-Gate-Way-Queue
+              - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:Webhook-API-Gate-Way-DLQ
+
+Outputs:
+  WebHookLogsPolicy:
+    Value: !Ref WebHookLogsPolicy
+    Export:
+      Name: WebHookLogsPolicy
+
+  SQSProcessPolicy:
+    Value: !Ref SQSProcessPolicy
+    Export:
+      Name: SQSProcessPolicy

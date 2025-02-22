@@ -1,0 +1,14 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  SQSProcessorStackURLParameter:
+    Type: "String"
+    Description: "Processor Stack Parameter"
+    Default: ""
+
+Resources:
+  SQSProcessor:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref SQSProcessorStackURLParameter
+
